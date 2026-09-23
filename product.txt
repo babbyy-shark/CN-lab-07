@@ -1,0 +1,10 @@
+101 Milk 45.50
+102 Bread 30.00
+103 Eggs 72.00
+104 Butter 58.25
+105 Rice_1kg 64.00
+106 Sugar_1kg 48.00
+107 Tea_250g 110.00
+108 Biscuits 20.00
+109 Soap 35.00
+110 Toothpaste 89.50
