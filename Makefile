@@ -1,6 +1,8 @@
 CC=gcc
 CFLAGS=-Wall -Wextra -g
 
+.PHONY: all clean
+
 all: server client
 
 server: server.c common.c db.c handler.c protocol.h
