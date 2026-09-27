@@ -34,6 +34,11 @@ int main(int argc, char **argv) {
     }
     int port = atoi(argv[1]);
 
+    if (port <= 0 || port > 65535) {
+        fprintf(stderr, "Invalid port number\n");
+        exit(1);
+    }
+
     printf("Starting server on port %d...\n", port);
 
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -59,7 +64,7 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    if (listen(listenfd, 10) == -1) {
+    if (listen(listenfd, 20) == -1) {
         perror("Listen failed");
         exit(1);
     }

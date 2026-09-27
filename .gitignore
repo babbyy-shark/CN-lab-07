@@ -1,2 +1,5 @@
 client
 server
+stress_test.py
+server.dSYM
+client.dSYM

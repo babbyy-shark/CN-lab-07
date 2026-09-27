@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <netinet/in.h>
 
 #include "protocol.h"
@@ -50,88 +51,138 @@ int main(int argc, char *argv[]) {
 
     while (1) {
         printf("\n1) Buy item\n2) Close and get total\nChoice: ");
-        int choice;
-        int matched = scanf("%d", &choice);
+        fflush(stdout); 
 
-        if (matched == EOF) {
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(STDIN_FILENO, &readfds);
+        FD_SET(sock, &readfds);
+
+        int max_fd = (STDIN_FILENO > sock) ? STDIN_FILENO : sock;
+
+        if (select(max_fd + 1, &readfds, NULL, NULL, NULL) < 0) {
+            perror("select failed");
             break;
         }
 
-        if (matched != 1) {
-            clear_input_line();
-            printf("Invalid choice. Please enter 1 or 2.\n");
-            continue;
+        if (FD_ISSET(sock, &readfds)) {
+            char dummy;
+            if (recv(sock, &dummy, 1, MSG_PEEK) <= 0) {
+                printf("\nServer disconnected\n");
+                close(sock);
+                return 1;
+            }
         }
 
-        Request req;
-        memset(&req, 0, sizeof(req));
+        if (FD_ISSET(STDIN_FILENO, &readfds)) {
+            int choice;
+            int matched = scanf("%d", &choice);
 
-        if (choice == 1) {
-            int upc, quantity;
-            while (1) {
-                printf("Enter UPC code and quantity: ");
-                int ret = scanf("%d %d", &upc, &quantity);
-                if (ret == EOF) {
-                    close(sock);
-                    return 0;
-                }
-                if (ret == 2) {
-                    clear_input_line();
-                    break;
-                }
-                printf("Invalid input. Please enter numeric values.\n");
+            if (matched == EOF) {
+                break;
+            }
+
+            if (matched != 1) {
                 clear_input_line();
+                printf("Invalid choice. Please enter 1 or 2.\n");
+                continue;
             }
 
-            req.request_type = REQ_ITEM;
-            req.upc = upc;
-            req.number = quantity;
-        } else if (choice == 2) {
-            clear_input_line();
-            req.request_type = REQ_CLOSE;
-            req.upc = 0;
-            req.number = 0;
-        } else {
-            clear_input_line();
-            printf("Invalid choice. Please enter 1 or 2.\n");
-            continue;
-        }
+            Request req;
+            memset(&req, 0, sizeof(req));
 
-        Request wire_req;
-        wire_req.request_type = htonl(req.request_type);
-        wire_req.upc = htonl(req.upc);
-        wire_req.number = htonl(req.number);
+            if (choice == 1) {
+                int upc, quantity;
+                while (1) {
+                    printf("Enter UPC code and quantity: ");
+                    fflush(stdout);
 
-        if (send_all(sock, &wire_req, sizeof(wire_req)) != 0) {
-            printf("Server disconnected\n");
-            close(sock);
-            return 1;
-        }
+                    fd_set inner_readfds;
+                    FD_ZERO(&inner_readfds);
+                    FD_SET(STDIN_FILENO, &inner_readfds);
+                    FD_SET(sock, &inner_readfds);
 
-        Response resp;
-        if (recv_all(sock, &resp, sizeof(resp)) != 0) {
-            printf("Server disconnected\n");
-            close(sock);
-            return 1;
-        }
+                    int inner_max_fd = (STDIN_FILENO > sock) ? STDIN_FILENO : sock;
 
-        resp.response_type = ntohl(resp.response_type);
-        resp.response[MSG_LEN - 1] = '\0';
+                    if (select(inner_max_fd + 1, &inner_readfds, NULL, NULL, NULL) < 0) {
+                        perror("select failed");
+                        break;
+                    }
 
-        if (req.request_type == REQ_ITEM) {
-            if (resp.response_type == RESP_OK) {
-                printf("Price and item: %s\n", resp.response);
+                    if (FD_ISSET(sock, &inner_readfds)) {
+                        char dummy;
+                        if (recv(sock, &dummy, 1, MSG_PEEK) <= 0) {
+                            printf("\nServer disconnected\n");
+                            close(sock);
+                            return 1;
+                        }
+                    }
+
+                    if (FD_ISSET(STDIN_FILENO, &inner_readfds)) {
+                        int ret = scanf("%d %d", &upc, &quantity);
+                        if (ret == EOF) {
+                            close(sock);
+                            return 0;
+                        }
+                        if (ret == 2) {
+                            clear_input_line();
+                            break;
+                        }
+                        printf("Invalid input. Please enter numeric values.\n");
+                        clear_input_line();
+                    }
+                }
+
+                req.request_type = REQ_ITEM;
+                req.upc = upc;
+                req.number = quantity;
+            } else if (choice == 2) {
+                clear_input_line();
+                req.request_type = REQ_CLOSE;
+                req.upc = 0;
+                req.number = 0;
             } else {
-                printf("%s\n", resp.response);
+                clear_input_line();
+                printf("Invalid choice. Please enter 1 or 2.\n");
+                continue;
             }
-        } else if (req.request_type == REQ_CLOSE) {
-            if (resp.response_type == RESP_OK) {
-                printf("Total amount: %s\n", resp.response);
-            } else {
-                printf("%s\n", resp.response);
+
+            Request wire_req;
+            wire_req.request_type = htonl(req.request_type);
+            wire_req.upc = htonl(req.upc);
+            wire_req.number = htonl(req.number);
+
+            if (send_all(sock, &wire_req, sizeof(wire_req)) != 0) {
+                printf("Server disconnected\n");
+                close(sock);
+                return 1;
             }
-            close(sock);
-            return 0;
+
+            Response resp;
+            if (recv_all(sock, &resp, sizeof(resp)) != 0) {
+                printf("Server disconnected\n");
+                close(sock);
+                return 1;
+            }
+
+            resp.response_type = ntohl(resp.response_type);
+            resp.response[MSG_LEN - 1] = '\0';
+
+            if (req.request_type == REQ_ITEM) {
+                if (resp.response_type == RESP_OK) {
+                    printf("Price and item: %s\n", resp.response);
+                } else {
+                    printf("%s\n", resp.response);
+                }
+            } else if (req.request_type == REQ_CLOSE) {
+                if (resp.response_type == RESP_OK) {
+                    printf("Total amount: %s\n", resp.response);
+                } else {
+                    printf("%s\n", resp.response);
+                }
+                close(sock);
+                return 0;
+            }
         }
     }
 
