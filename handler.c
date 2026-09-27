@@ -15,7 +15,7 @@ int handle_request(const Request *req, Response *resp, double *total) {
         }
 
         double price;
-        char name[MSG_LEN];
+        char name[64];
         if (lookup_product("products.txt", req->upc, &price, name, sizeof(name)) == 0) {
             resp->response_type = RESP_ERR;
             strcpy(resp->response, "UPC is not found in database");
